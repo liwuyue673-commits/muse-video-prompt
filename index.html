@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Seedance 提示词生成面板</title>
+<title>Seedance提示词面板｜AI扩写+拼装模板</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
 body{padding:16px;background:#f4f6f8;color:#222;max-width:720px;margin:0 auto}
@@ -15,15 +15,31 @@ textarea{min-height:90px;resize:vertical}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 button{padding:11px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;margin:4px 0;cursor:pointer}
 button.gray{background:#6b7280}
+button.green{background:#059669}
 #result{min-height:120px;background:#f8fafc}
 #negResult{min-height:80px;background:#fff2f2}
 .tpl-item{padding:8px;border:1px solid #eee;border-radius:8px;margin:6px 0;cursor:pointer}
+.tip{color:#666;font-size:13px;margin:4px 0}
 </style>
 </head>
 <body>
-<h2>Seedance 提示词生成面板</h2>
+<h2>Seedance提示词面板</h2>
+
 <div class="block">
-  <label>主体/场景描述</label>
+  <label>🔑 豆包API Key（AI扩写需要）</label>
+  <input id="apikey" type="password" placeholder="填入你的Doubao API Key">
+  <p class="tip">不填的话，AI扩写功能失效，拼装模板依然能用</p>
+</div>
+
+<div class="block">
+  <label>✍️ 简短描述（AI扩写入口）</label>
+  <textarea id="shortInput" placeholder="一句话描述画面，例如：女孩在路边散步，千禧年DV录像"></textarea>
+  <button class="green" onclick="aiExpand()">✨ AI自动扩写生成提示词</button>
+  <p class="tip">AI会自动补充光影、运镜、质感、配套负面词</p>
+</div>
+
+<div class="block">
+  <label>主体/场景描述（手动拼装）</label>
   <textarea id="main" placeholder="例：上杉绘梨衣站在树下，微风拂动长发"></textarea>
   <div class="row">
     <div>
@@ -66,20 +82,19 @@ button.gray{background:#6b7280}
       </select>
     </div>
   </div>
+  <button onclick="build()">🧩 手动拼装提示词</button>
   <label>负面提示词（规避崩坏）</label>
   <textarea id="negative" placeholder="畸形肢体，扭曲面部，多手指，水印，文字，闪烁，变形，画面撕裂"></textarea>
-  <br>
-  <button onclick="build()">生成整套提示词</button>
 </div>
 
 <div class="block">
-  <label>正向提示词</label>
+  <label>✅ 正向提示词</label>
   <textarea id="result" readonly></textarea>
   <div class="row">
     <button onclick="copyPos()">复制正向</button>
     <button onclick="copyNeg()">复制负面</button>
   </div>
-  <label>负面提示词</label>
+  <label>❌ 负面提示词</label>
   <textarea id="negResult" readonly></textarea>
   <button class="gray" onclick="saveTpl()">保存整套模板</button>
 </div>
@@ -99,8 +114,11 @@ const qualityEl = document.getElementById('quality');
 const negEl = document.getElementById('negative');
 const resEl = document.getElementById('result');
 const negResEl = document.getElementById('negResult');
-const tplKey = 'seedance-prompt-v2';
+const shortInputEl = document.getElementById('shortInput');
+const apiKeyEl = document.getElementById('apikey');
+const tplKey = 'seedance-prompt-v3';
 
+// 手动拼装
 function build(){
   let pos = [];
   if(mainEl.value.trim()) pos.push(mainEl.value.trim());
@@ -111,6 +129,45 @@ function build(){
   resEl.value = pos.join('，');
   negResEl.value = negEl.value.trim();
 }
+
+// AI扩写（豆包API）
+async function aiExpand(){
+  const key = apiKeyEl.value.trim();
+  const text = shortInputEl.value.trim();
+  if(!key) return alert('请先填入豆包API Key！');
+  if(!text) return alert('请输入简短画面描述！');
+  resEl.value = "AI生成中...";
+  negResEl.value = "";
+  try{
+    const resp = await fetch("https://ark.cn-beijing.volces.com/api/v3/chat/completions",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":`Bearer ${key}`
+      },
+      body:JSON.stringify({
+        model:"doubao-lite-4k",
+        messages:[
+          {role:"system",content:"你是Seedance视频提示词专家。根据用户简短描述，扩充适合AI视频的正向提示词，补充光影、质感、相机参数、动态细节；另外单独输出负面提示词，防止畸形、人脸崩坏、闪烁、水印。格式严格：【正向】xxx\n【负面】xxx，不要多余解释。"},
+          {role:"user",content:text}
+        ]
+      })
+    })
+    const data = await resp.json();
+    const raw = data.choices[0].message.content;
+    const posMatch = raw.match(/【正向】([\s\S]*?)【负面】/);
+    const negMatch = raw.match(/【负面】([\s\S]*)/);
+    if(posMatch && negMatch){
+      resEl.value = posMatch[1].trim();
+      negResEl.value = negMatch[1].trim();
+    }else{
+      resEl.value = raw;
+    }
+  }catch(e){
+    resEl.value = "请求失败，检查API Key或者网络";
+  }
+}
+
 function copyPos(){
   navigator.clipboard.writeText(resEl.value);
   alert('正向提示词已复制');
@@ -119,6 +176,7 @@ function copyNeg(){
   navigator.clipboard.writeText(negResEl.value);
   alert('负面提示词已复制');
 }
+
 function getTpl(){
   return JSON.parse(localStorage.getItem(tplKey) || '[]');
 }
