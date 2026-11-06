@@ -3,66 +3,156 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prompt模板工具</title>
+<title>Seedance 提示词生成面板</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
-body{padding:16px;background:#f4f4f4}
-.box{background:#fff;border-radius:12px;padding:16px;margin-bottom:14px}
-textarea{width:100%;min-height:180px;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:15px;resize:vertical}
-input{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;font-size:15px}
-button{padding:10px 14px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;margin:4px;cursor:pointer}
-button.del{background:#ef4444}
-#list{margin-top:12px}
-.item{padding:12px;border:1px solid #eee;border-radius:8px;margin:8px 0}
+body{padding:16px;background:#f4f6f8;color:#222;max-width:720px;margin:0 auto}
+h2{margin-bottom:16px;font-size:20px}
+.block{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 2px 8px #00000010}
+label{display:block;margin:8px 0 4px;font-size:14px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:15px}
+textarea{min-height:90px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{padding:11px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;margin:4px 0;cursor:pointer}
+button.gray{background:#6b7280}
+#result{min-height:120px;background:#f8fafc}
+#negResult{min-height:80px;background:#fff2f2}
+.tpl-item{padding:8px;border:1px solid #eee;border-radius:8px;margin:6px 0;cursor:pointer}
 </style>
 </head>
 <body>
-<div class="box">
-<h3>Prompt编辑</h3>
-<textarea id="prompt" placeholder="在这里写提示词..."></textarea>
-<div style="margin-top:10px">
-<button onclick="copy()">复制</button>
-<button onclick="save()">保存模板</button>
-<button onclick="document.getElementById('prompt').value=''">清空</button>
+<h2>Seedance 提示词生成面板</h2>
+<div class="block">
+  <label>主体/场景描述</label>
+  <textarea id="main" placeholder="例：上杉绘梨衣站在树下，微风拂动长发"></textarea>
+  <div class="row">
+    <div>
+      <label>画面风格</label>
+      <select id="style">
+        <option value="">无</option>
+        <option>千禧DV录像，4:3，手持晃动，胶片颗粒，暖黄复古色调</option>
+        <option>超写实人像，单反50mm f1.8，自然光，皮肤质感细腻</option>
+        <option>日系清新，柔和漫射光，低饱和，干净背景</option>
+        <option>电影夜景，冷色调，氛围感，浅景深</option>
+      </select>
+    </div>
+    <div>
+      <label>运镜</label>
+      <select id="camera">
+        <option value="">无</option>
+        <option>缓慢向前推镜</option>
+        <option>轻微呼吸感手持</option>
+        <option>缓慢横移</option>
+        <option>固定机位</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>画幅比例</label>
+      <select id="ratio">
+        <option value="">无</option>
+        <option>9:16竖屏</option>
+        <option>16:9横屏</option>
+        <option>4:3复古DV</option>
+      </select>
+    </div>
+    <div>
+      <label>画质</label>
+      <select id="quality">
+        <option value="">无</option>
+        <option>8K超写实，细节丰富，无过度美颜</option>
+        <option>4K电影质感，柔和动态模糊</option>
+      </select>
+    </div>
+  </div>
+  <label>负面提示词（规避崩坏）</label>
+  <textarea id="negative" placeholder="畸形肢体，扭曲面部，多手指，水印，文字，闪烁，变形，画面撕裂"></textarea>
+  <br>
+  <button onclick="build()">生成整套提示词</button>
 </div>
+
+<div class="block">
+  <label>正向提示词</label>
+  <textarea id="result" readonly></textarea>
+  <div class="row">
+    <button onclick="copyPos()">复制正向</button>
+    <button onclick="copyNeg()">复制负面</button>
+  </div>
+  <label>负面提示词</label>
+  <textarea id="negResult" readonly></textarea>
+  <button class="gray" onclick="saveTpl()">保存整套模板</button>
 </div>
-<div class="box">
-<h3>我的模板</h3>
-<input id="tname" placeholder="模板名称">
-<div id="list"></div>
+
+<div class="block">
+  <label>我的模板（点击载入）</label>
+  <div id="tplList"></div>
+  <button class="gray" onclick="clearTpl()">清空全部模板</button>
 </div>
+
 <script>
-let data=JSON.parse(localStorage.getItem('pmList')||'[]')
-function render(){
-  let html=''
-  data.forEach((it,i)=>{
-    html+=`<div class="item"><b>${it.name}</b><p style="margin:6px 0;color:#444;font-size:14px">${it.text.slice(0,60)}...</p>
-    <button onclick="load(${i})">载入</button><button class="del" onclick="del(${i})">删除</button></div>`
+const mainEl = document.getElementById('main');
+const styleEl = document.getElementById('style');
+const cameraEl = document.getElementById('camera');
+const ratioEl = document.getElementById('ratio');
+const qualityEl = document.getElementById('quality');
+const negEl = document.getElementById('negative');
+const resEl = document.getElementById('result');
+const negResEl = document.getElementById('negResult');
+const tplKey = 'seedance-prompt-v2';
+
+function build(){
+  let pos = [];
+  if(mainEl.value.trim()) pos.push(mainEl.value.trim());
+  if(styleEl.value) pos.push(styleEl.value);
+  if(cameraEl.value) pos.push(cameraEl.value);
+  if(ratioEl.value) pos.push(ratioEl.value);
+  if(qualityEl.value) pos.push(qualityEl.value);
+  resEl.value = pos.join('，');
+  negResEl.value = negEl.value.trim();
+}
+function copyPos(){
+  navigator.clipboard.writeText(resEl.value);
+  alert('正向提示词已复制');
+}
+function copyNeg(){
+  navigator.clipboard.writeText(negResEl.value);
+  alert('负面提示词已复制');
+}
+function getTpl(){
+  return JSON.parse(localStorage.getItem(tplKey) || '[]');
+}
+function saveTpl(){
+  const p = resEl.value.trim();
+  const n = negResEl.value.trim();
+  if(!p) return alert('先生成正向提示词！');
+  const name = prompt('给这个模板起名字：');
+  if(!name) return;
+  const list = getTpl();
+  list.push({name,pos:p,neg:n});
+  localStorage.setItem(tplKey, JSON.stringify(list));
+  renderTpl();
+}
+function renderTpl(){
+  const wrap = document.getElementById('tplList');
+  const list = getTpl();
+  wrap.innerHTML = '';
+  list.forEach(item=>{
+    const div = document.createElement('div');
+    div.className = 'tpl-item';
+    div.innerText = item.name;
+    div.onclick = ()=>{
+      resEl.value = item.pos;
+      negResEl.value = item.neg;
+    }
+    wrap.appendChild(div);
   })
-  document.getElementById('list').innerHTML=html
 }
-function copy(){
-  const t=document.getElementById('prompt').value
-  navigator.clipboard.writeText(t).then(()=>alert('已复制'))
+function clearTpl(){
+  localStorage.removeItem(tplKey);
+  renderTpl();
 }
-function save(){
-  const name=document.getElementById('tname').value.trim()
-  const text=document.getElementById('prompt').value.trim()
-  if(!name||!text)return alert('名称和内容不能为空')
-  data.push({name,text})
-  localStorage.setItem('pmList',JSON.stringify(data))
-  render()
-  document.getElementById('tname').value=''
-}
-function load(i){
-  document.getElementById('prompt').value=data[i].text
-}
-function del(i){
-  data.splice(i,1)
-  localStorage.setItem('pmList',JSON.stringify(data))
-  render()
-}
-render()
+renderTpl();
 </script>
 </body>
 </html>
